@@ -237,100 +237,118 @@
       url: window.location.href
     };
     
-    // 提取标题 - 多种选择器
-    const titleSelectors = [
-      'h1',
-      '[class*="title"]',
-      '[class*="Title"]',
-      '[class*="note-title"]',
-      '.reds-note-title',
-      '[data-v-] h1',
-      'article h1'
-    ];
-    for (const selector of titleSelectors) {
-      const titleEl = document.querySelector(selector);
-      if (titleEl && titleEl.textContent.trim()) {
+    // 提取标题 - 从 note-container 中查找
+    const noteContainer = document.querySelector('.note-container, #noteContainer, [class*="note-detail"]');
+    if (noteContainer) {
+      const titleEl = noteContainer.querySelector('h1, [class*="title"], .reds-note-title');
+      if (titleEl) {
         data.title = titleEl.textContent.trim();
-        break;
       }
     }
     
-    // 提取作者信息和粉丝数
-    const authorSelectors = [
-      '[class*="author"]',
-      '[class*="user-info"]',
-      '[class*="nickname"]',
-      '[class*="user"]',
-      '.reds-note-user'
-    ];
-    for (const selector of authorSelectors) {
-      const authorEl = document.querySelector(selector);
-      if (authorEl) {
-        const text = authorEl.textContent.trim();
-        if (text) {
-          data.author = text;
-          // 尝试从作者文本中提取粉丝数（如 "DJ 伦 10 万+"）
-          const fansMatch = text.match(/(\d+(?:\.\d+)?[万千 kK 万+]+)/);
-          if (fansMatch) {
-            data.authorFans = parseNumber(fansMatch[0]);
-          }
+    // 如果上面没找到，尝试通用选择器
+    if (!data.title) {
+      const titleSelectors = [
+        'h1',
+        '[class*="title"]',
+        '[class*="Title"]',
+        '[class*="note-title"]',
+        '.reds-note-title'
+      ];
+      for (const selector of titleSelectors) {
+        const titleEl = document.querySelector(selector);
+        if (titleEl && titleEl.textContent.trim()) {
+          data.title = titleEl.textContent.trim();
+          break;
         }
-        if (data.authorFans > 0) break;
       }
     }
     
-    // 提取点赞数 - 查找包含"赞"字的按钮或元素
-    const likeButtons = Array.from(document.querySelectorAll('button, [role="button"], div[class*="interact"]'));
-    const likeButton = likeButtons.find(btn => {
-      const text = btn.textContent;
-      return text.includes('赞') || text.includes('👍') || text.includes('❤');
-    });
-    if (likeButton) {
-      const countEl = likeButton.querySelector('.count, [class*="count"]') || likeButton;
-      data.likes = parseNumber(countEl.textContent);
+    // 提取作者信息 - 使用 author-container
+    const authorContainer = document.querySelector('.author-container, .author-wrapper, [class*="author"]');
+    if (authorContainer) {
+      data.author = authorContainer.textContent.trim();
+      // 尝试从作者文本中提取粉丝数
+      const fansMatch = data.author.match(/(\d+(?:\.\d+)?[万千 kK 万+]+)/);
+      if (fansMatch) {
+        data.authorFans = parseNumber(fansMatch[0]);
+      }
     }
     
-    // 提取收藏数 - 查找包含"收藏"或"⭐"的按钮
-    const collectButtons = Array.from(document.querySelectorAll('button, [role="button"]'));
-    const collectButton = collectButtons.find(btn => {
-      const text = btn.textContent;
-      return text.includes('收藏') || text.includes('⭐') || text.includes('★');
-    });
-    if (collectButton) {
-      const countEl = collectButton.querySelector('.count, [class*="count"]') || collectButton;
-      data.collects = parseNumber(countEl.textContent);
-    }
+    // 提取互动数据 - 使用 interaction-container
+    const interactionContainer = document.querySelector('.interaction-container, [class*="interact"]');
     
-    // 提取评论数 - 查找包含"评论"的按钮
-    const commentButtons = Array.from(document.querySelectorAll('button, [role="button"]'));
-    const commentButton = commentButtons.find(btn => {
-      const text = btn.textContent;
-      return text.includes('评论') || text.includes('💬');
-    });
-    if (commentButton) {
-      const countEl = commentButton.querySelector('.count, [class*="count"]') || commentButton;
-      data.comments = parseNumber(countEl.textContent);
-    }
-    
-    // 如果上面方法都没找到，尝试从页面所有.count 元素中提取
-    if (data.likes === 0 || data.collects === 0 || data.comments === 0) {
-      const countElements = document.querySelectorAll('.count');
-      countElements.forEach(el => {
-        const text = el.textContent.trim();
-        const num = parseNumber(text);
-        if (num > 0) {
-          // 根据父级元素判断类型
-          const parent = el.closest('button, [role="button"], div');
-          const parentText = parent?.textContent || '';
-          if (data.likes === 0 && (parentText.includes('赞') || parentText.includes('👍'))) {
+    if (interactionContainer) {
+      // 查找所有 count 元素
+      const countElements = interactionContainer.querySelectorAll('.count');
+      
+      // 查找点赞数 - 在 like-wrapper 中
+      const likeWrapper = interactionContainer.querySelector('.like-wrapper, [class*="like"]');
+      if (likeWrapper) {
+        const likeCount = likeWrapper.querySelector('.count');
+        if (likeCount) {
+          data.likes = parseNumber(likeCount.textContent);
+        }
+      }
+      
+      // 查找收藏数 - 在 collect-wrapper 或 star 相关元素中
+      const collectWrapper = interactionContainer.querySelector('.collect-wrapper, .mark-wrapper, [class*="collect"], [class*="star"], [class*="mark"]');
+      if (collectWrapper) {
+        const collectCount = collectWrapper.querySelector('.count');
+        if (collectCount) {
+          data.collects = parseNumber(collectCount.textContent);
+        }
+      }
+      
+      // 查找评论数 - 在 comment-wrapper 中
+      const commentWrapper = interactionContainer.querySelector('.comment-wrapper, [class*="comment"]');
+      if (commentWrapper) {
+        const commentCount = commentWrapper.querySelector('.count');
+        if (commentCount) {
+          data.comments = parseNumber(commentCount.textContent);
+        }
+      }
+      
+      // 如果上面没找到，尝试从所有 count 元素中推断
+      if (data.likes === 0 || data.collects === 0 || data.comments === 0) {
+        countElements.forEach((countEl, index) => {
+          const num = parseNumber(countEl.textContent);
+          if (num === 0) return;
+          
+          const parent = countEl.parentElement;
+          const parentClass = parent?.className || '';
+          
+          // 根据父级类名判断类型
+          if (data.likes === 0 && (parentClass.includes('like') || parentClass.includes('Like'))) {
             data.likes = num;
-          } else if (data.collects === 0 && (parentText.includes('收藏') || parentText.includes('⭐'))) {
+          } else if (data.collects === 0 && (parentClass.includes('collect') || parentClass.includes('mark') || parentClass.includes('star'))) {
             data.collects = num;
-          } else if (data.comments === 0 && (parentText.includes('评论') || parentText.includes('💬'))) {
+          } else if (data.comments === 0 && (parentClass.includes('comment'))) {
             data.comments = num;
           }
-        }
-      });
+        });
+      }
+    }
+    
+    // 如果 interaction-container 没找到，尝试直接查找 wrapper
+    if (!interactionContainer) {
+      const likeWrapper = document.querySelector('.like-wrapper');
+      if (likeWrapper) {
+        const countEl = likeWrapper.querySelector('.count');
+        if (countEl) data.likes = parseNumber(countEl.textContent);
+      }
+      
+      const collectWrapper = document.querySelector('.collect-wrapper, .mark-wrapper');
+      if (collectWrapper) {
+        const countEl = collectWrapper.querySelector('.count');
+        if (countEl) data.collects = parseNumber(countEl.textContent);
+      }
+      
+      const commentWrapper = document.querySelector('.comment-wrapper');
+      if (commentWrapper) {
+        const countEl = commentWrapper.querySelector('.count');
+        if (countEl) data.comments = parseNumber(countEl.textContent);
+      }
     }
     
     return data;
