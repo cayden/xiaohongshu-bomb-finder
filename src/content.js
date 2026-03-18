@@ -176,17 +176,20 @@
     showLoading(true);
     
     try {
-      // 等待详情页加载
-      await waitForElement('[class*="note-content"], [class*="detail"]', 5000);
+      // 小红书详情页不需要等待特定元素，直接尝试获取数据
+      // 等待一小段时间让页面渲染
+      await new Promise(resolve => setTimeout(resolve, 500));
       
       // 提取当前笔记的完整数据
       const noteData = extractDetailNoteData();
       
-      if (!noteData) {
+      console.log('📥 提取到的数据:', noteData);
+      
+      if (!noteData.title && noteData.likes === 0) {
         showLoading(false);
         return {
           success: false,
-          message: '无法获取笔记数据'
+          message: '无法获取笔记数据，请确保已在笔记详情页'
         };
       }
       
@@ -209,7 +212,7 @@
         analysis: analysis,
         message: analysis.isSuperBomb ? '🔥 这是一篇超爆款笔记！' : 
                  analysis.isPotentialBomb ? '⭐ 这是一篇潜力爆款笔记！' : 
-                 '📄 普通笔记'
+                 noteData.likes > 0 ? '📄 普通笔记' : '⚠️ 数据不完整'
       };
     } catch (error) {
       console.error('详情页分析失败:', error);
@@ -234,71 +237,100 @@
       url: window.location.href
     };
     
-    // 提取标题
-    const titleEl = document.querySelector('h1, [class*="title"], [class*="Title"]');
-    if (titleEl) {
-      data.title = titleEl.textContent.trim();
-    }
-    
-    // 提取作者信息和粉丝数（小红书把粉丝数放在作者名后面）
-    const authorEls = document.querySelectorAll('[class*="author"], [class*="user-info"], [class*="nickname"]');
-    for (const authorEl of authorEls) {
-      const text = authorEl.textContent.trim();
-      data.author = text;
-      // 尝试从作者文本中提取粉丝数（如 "DJ 伦 10 万+"）
-      const fansMatch = text.match(/(\d+(?:\.\d+)?[万千kK万+]+)/);
-      if (fansMatch) {
-        data.authorFans = parseNumber(fansMatch[0]);
-      }
-      if (data.authorFans > 0) break;
-    }
-    
-    // 提取点赞数 - 多种选择器尝试
-    const likeSelectors = [
-      '[class*="like"] [class*="count"]',
-      '[class*="like"] .count',
-      '[class*="interact"] .count',
-      'button[class*="like"] .count',
-      '[class*="like-count"]'
+    // 提取标题 - 多种选择器
+    const titleSelectors = [
+      'h1',
+      '[class*="title"]',
+      '[class*="Title"]',
+      '[class*="note-title"]',
+      '.reds-note-title',
+      '[data-v-] h1',
+      'article h1'
     ];
-    for (const selector of likeSelectors) {
-      const likeEl = document.querySelector(selector);
-      if (likeEl && likeEl.textContent.trim()) {
-        data.likes = parseNumber(likeEl.textContent);
+    for (const selector of titleSelectors) {
+      const titleEl = document.querySelector(selector);
+      if (titleEl && titleEl.textContent.trim()) {
+        data.title = titleEl.textContent.trim();
         break;
       }
     }
     
-    // 提取收藏数 - 多种选择器尝试
-    const collectSelectors = [
-      '[class*="collect"] [class*="count"]',
-      '[class*="collect"] .count',
-      '[class*="star"] [class*="count"]',
-      '[class*="star"] .count',
-      '[class*="mark"] [class*="count"]',
-      'button[class*="collect"] .count',
-      '[class*="collect-count"]'
+    // 提取作者信息和粉丝数
+    const authorSelectors = [
+      '[class*="author"]',
+      '[class*="user-info"]',
+      '[class*="nickname"]',
+      '[class*="user"]',
+      '.reds-note-user'
     ];
-    for (const selector of collectSelectors) {
-      const collectEl = document.querySelector(selector);
-      if (collectEl && collectEl.textContent.trim()) {
-        data.collects = parseNumber(collectEl.textContent);
-        break;
+    for (const selector of authorSelectors) {
+      const authorEl = document.querySelector(selector);
+      if (authorEl) {
+        const text = authorEl.textContent.trim();
+        if (text) {
+          data.author = text;
+          // 尝试从作者文本中提取粉丝数（如 "DJ 伦 10 万+"）
+          const fansMatch = text.match(/(\d+(?:\.\d+)?[万千 kK 万+]+)/);
+          if (fansMatch) {
+            data.authorFans = parseNumber(fansMatch[0]);
+          }
+        }
+        if (data.authorFans > 0) break;
       }
     }
     
-    // 提取评论数
-    const commentSelectors = [
-      '[class*="comment"] [class*="count"]',
-      '[class*="comment"] .count',
-      'button[class*="comment"] .count'
-    ];
-    for (const selector of commentSelectors) {
-      const commentEl = document.querySelector(selector);
-      if (commentEl && commentEl.textContent.trim()) {
-        data.comments = parseNumber(commentEl.textContent);
-        break;
-      }
+    // 提取点赞数 - 查找包含"赞"字的按钮或元素
+    const likeButtons = Array.from(document.querySelectorAll('button, [role="button"], div[class*="interact"]'));
+    const likeButton = likeButtons.find(btn => {
+      const text = btn.textContent;
+      return text.includes('赞') || text.includes('👍') || text.includes('❤');
+    });
+    if (likeButton) {
+      const countEl = likeButton.querySelector('.count, [class*="count"]') || likeButton;
+      data.likes = parseNumber(countEl.textContent);
+    }
+    
+    // 提取收藏数 - 查找包含"收藏"或"⭐"的按钮
+    const collectButtons = Array.from(document.querySelectorAll('button, [role="button"]'));
+    const collectButton = collectButtons.find(btn => {
+      const text = btn.textContent;
+      return text.includes('收藏') || text.includes('⭐') || text.includes('★');
+    });
+    if (collectButton) {
+      const countEl = collectButton.querySelector('.count, [class*="count"]') || collectButton;
+      data.collects = parseNumber(countEl.textContent);
+    }
+    
+    // 提取评论数 - 查找包含"评论"的按钮
+    const commentButtons = Array.from(document.querySelectorAll('button, [role="button"]'));
+    const commentButton = commentButtons.find(btn => {
+      const text = btn.textContent;
+      return text.includes('评论') || text.includes('💬');
+    });
+    if (commentButton) {
+      const countEl = commentButton.querySelector('.count, [class*="count"]') || commentButton;
+      data.comments = parseNumber(countEl.textContent);
+    }
+    
+    // 如果上面方法都没找到，尝试从页面所有.count 元素中提取
+    if (data.likes === 0 || data.collects === 0 || data.comments === 0) {
+      const countElements = document.querySelectorAll('.count');
+      countElements.forEach(el => {
+        const text = el.textContent.trim();
+        const num = parseNumber(text);
+        if (num > 0) {
+          // 根据父级元素判断类型
+          const parent = el.closest('button, [role="button"], div');
+          const parentText = parent?.textContent || '';
+          if (data.likes === 0 && (parentText.includes('赞') || parentText.includes('👍'))) {
+            data.likes = num;
+          } else if (data.collects === 0 && (parentText.includes('收藏') || parentText.includes('⭐'))) {
+            data.collects = num;
+          } else if (data.comments === 0 && (parentText.includes('评论') || parentText.includes('💬'))) {
+            data.comments = num;
+          }
+        }
+      });
     }
     
     return data;
@@ -307,7 +339,8 @@
   // 获取当前笔记 ID
   function getCurrentNoteId() {
     // 从 URL 提取
-    const match = window.location.href.match(/\/note\/(\w+)/);
+    const match = window.location.href.match(/\/note\/(\w+)/) || 
+                  window.location.href.match(/\/explore\/(\w+)/);
     if (match) {
       return match[1];
     }
@@ -370,39 +403,36 @@
 
   // 标注详情页笔记
   function highlightDetailNote(analysis) {
-    // 找到笔记容器
-    const noteContainer = document.querySelector('article, [class*="note-container"], [class*="detail"]') || document.body;
-    
     // 清除之前的标注
     document.querySelectorAll('.xhs-bomb-detail-badge').forEach(el => el.remove());
-    noteContainer.classList.remove('xhs-bomb-super', 'xhs-bomb-potential');
     
-    // 添加标注
+    // 创建标注徽章
     const badge = document.createElement('div');
     badge.className = 'xhs-bomb-detail-badge';
     
     if (analysis.isSuperBomb) {
-      noteContainer.classList.add('xhs-bomb-super');
       badge.innerHTML = `
         <div style="font-size:24px;margin-bottom:8px;">🔥</div>
-        <div style="font-weight:600;margin-bottom:4px;">超爆款</div>
+        <div style="font-weight:600;margin-bottom:4px;color:#ff2442;">超爆款</div>
         <div style="font-size:12px;">👍 ${formatNumber(analysis.likes)}</div>
         <div style="font-size:12px;">⭐ ${formatNumber(analysis.collects)}</div>
-        <div style="font-size:11px;color:#ff2442;">点赞/粉丝比：${analysis.likeToFansRatio.toFixed(1)}</div>
+        <div style="font-size:11px;color:#666;margin-top:8px;">粉丝：${formatNumber(analysis.authorFans)}</div>
+        <div style="font-size:10px;color:#ff2442;margin-top:4px;">比值：${analysis.likeToFansRatio.toFixed(1)}x</div>
       `;
     } else if (analysis.isPotentialBomb) {
-      noteContainer.classList.add('xhs-bomb-potential');
       badge.innerHTML = `
         <div style="font-size:24px;margin-bottom:8px;">⭐</div>
-        <div style="font-weight:600;margin-bottom:4px;">潜力爆款</div>
+        <div style="font-weight:600;margin-bottom:4px;color:#ff9500;">潜力爆款</div>
         <div style="font-size:12px;">👍 ${formatNumber(analysis.likes)}</div>
         <div style="font-size:12px;">⭐ ${formatNumber(analysis.collects)}</div>
+        <div style="font-size:11px;color:#666;margin-top:8px;">粉丝：${formatNumber(analysis.authorFans)}</div>
       `;
     } else {
       badge.innerHTML = `
         <div style="font-size:20px;margin-bottom:8px;">📄</div>
-        <div style="font-weight:600;">普通笔记</div>
-        <div style="font-size:11px;color:#999;">点赞/粉丝比：${analysis.likeToFansRatio.toFixed(2)}</div>
+        <div style="font-weight:600;color:#666;">普通笔记</div>
+        <div style="font-size:11px;color:#999;margin-top:8px;">👍 ${formatNumber(analysis.likes)}</div>
+        <div style="font-size:11px;color:#999;">粉丝：${formatNumber(analysis.authorFans)}</div>
       `;
     }
     
