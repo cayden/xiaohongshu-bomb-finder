@@ -1,5 +1,5 @@
 // 小红书爆款文章检测 - Content Script
-// 适配小红书实际页面结构
+// 适配小红书实际页面结构 - 支持搜索页和详情页
 
 (function() {
   'use strict';
@@ -12,10 +12,9 @@
 
   console.log('🔥 小红书爆款 finder 已注入');
 
-  // 存储找到的爆款文章
-  let bombArticles = [];
-  let controlPanel = null;
-  let noteDataCache = new Map();
+  // 存储当前笔记数据
+  let currentNoteData = null;
+  let analysisResult = null;
 
   // 监听来自 popup 的消息
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -28,50 +27,56 @@
         });
       return true;
     }
+    
+    if (request.action === 'analyze') {
+      // 分析当前详情页笔记
+      analyzeCurrentNote(request.settings)
+        .then(result => sendResponse(result))
+        .catch(error => sendResponse({ success: false, message: error.message }));
+      return true;
+    }
   });
 
-  // 处理搜索请求
+  // 处理搜索请求（搜索页面）
   async function handleSearch(settings) {
     showLoading(true);
     
     try {
-      // 等待页面加载
-      await waitForElement('.reds-note-card', 8000);
+      // 检查是搜索页还是详情页
+      const isSearchPage = window.location.pathname.includes('/search');
       
-      // 解析所有笔记卡片
-      const notes = parseNotesFromPage();
-      
-      console.log(`找到 ${notes.length} 篇笔记`);
-      
-      if (notes.length === 0) {
+      if (isSearchPage) {
+        // 等待页面加载
+        await waitForElement('.reds-note-card', 8000);
+        
+        // 解析所有笔记卡片
+        const notes = parseNotesFromPage();
+        
+        console.log(`找到 ${notes.length} 篇笔记`);
+        
+        if (notes.length === 0) {
+          showLoading(false);
+          return {
+            success: false,
+            message: '未找到笔记，请确保已在小红书搜索页面'
+          };
+        }
+        
+        // 在搜索页面，标注所有笔记为"待分析"状态
+        highlightNotesForAnalysis(notes);
+        
         showLoading(false);
+        
         return {
-          success: false,
-          message: '未找到笔记，请确保已在小红书搜索页面'
+          success: true,
+          bombCount: 0,
+          totalNotes: notes.length,
+          message: `已标注 ${notes.length} 篇笔记，请点击笔记查看详情获取完整数据`
         };
+      } else {
+        // 详情页 - 分析当前笔记
+        return await analyzeCurrentNote(settings);
       }
-      
-      // 尝试获取互动数据（从页面或 API）
-      await fetchInteractionData(notes);
-      
-      // 分析爆款文章
-      bombArticles = analyzeBombs(notes, settings);
-      
-      console.log(`找到 ${bombArticles.length} 篇爆款`);
-      
-      // 高亮标注
-      highlightBombs(bombArticles);
-      
-      // 显示控制面板
-      showControlPanel(bombArticles.length, notes.length);
-      
-      showLoading(false);
-      
-      return {
-        success: true,
-        bombCount: bombArticles.length,
-        totalNotes: notes.length
-      };
     } catch (error) {
       console.error('搜索失败:', error);
       showLoading(false);
@@ -82,11 +87,9 @@
     }
   }
 
-  // 从页面解析笔记数据
+  // 从页面解析笔记数据（搜索页）
   function parseNotesFromPage() {
     const notes = [];
-    
-    // 小红书实际的卡片选择器
     const noteElements = document.querySelectorAll('.reds-note-card');
     
     noteElements.forEach((element, index) => {
@@ -94,7 +97,6 @@
         const noteData = extractNoteData(element, index);
         if (noteData) {
           notes.push(noteData);
-          noteDataCache.set(noteData.id, noteData);
         }
       } catch (error) {
         console.warn('解析笔记失败:', error);
@@ -127,7 +129,6 @@
     // 提取作者信息
     const authorEl = element.querySelector('.reds-note-user');
     if (authorEl) {
-      // 尝试从 img 的 name 属性或 alt 属性获取作者名
       const imgEl = authorEl.querySelector('img');
       if (imgEl) {
         data.author = imgEl.getAttribute('name') || imgEl.getAttribute('alt') || authorEl.textContent.trim();
@@ -137,235 +138,274 @@
     }
     
     // 提取笔记链接
-    const linkEl = element.querySelector('a');
+    const linkEl = element.closest('a');
     if (linkEl) {
       data.url = linkEl.href;
-    } else {
-      // 尝试从父级查找链接
-      const parentLink = element.closest('a');
-      if (parentLink) {
-        data.url = parentLink.href;
-      }
     }
     
-    // 注意：搜索卡片上不显示互动数据，需要后续获取
     return data;
   }
 
-  // 获取互动数据（尝试从多种来源）
-  async function fetchInteractionData(notes) {
-    // 方法 1：尝试从页面已有的数据属性中获取
-    notes.forEach(note => {
-      const element = note.element;
-      
-      // 尝试从 data 属性获取
-      const likeData = element.querySelector('[class*="like"] [class*="count"], [class*="interact"]');
-      if (likeData) {
-        note.likes = parseNumber(likeData.textContent);
-      }
-      
-      const collectData = element.querySelector('[class*="collect"], [class*="star"], [class*="mark"]');
-      if (collectData) {
-        note.collects = parseNumber(collectData.textContent);
-      }
-    });
-    
-    // 方法 2：监听网络请求（如果可能）
-    // 由于内容脚本限制，这里主要依赖页面已有的数据
-    
-    // 方法 3：对于没有数据的笔记，使用估算或标记为"需要查看详情"
-    notes.forEach(note => {
-      if (note.likes === 0 && note.url) {
-        // 标记为需要进一步分析
-        note.needsDetailFetch = true;
-      }
-    });
-  }
-
-  // 分析爆款文章
-  function analyzeBombs(notes, settings) {
-    const { likeRatio, collectRatio, minLikes } = settings;
-    const bombs = [];
-    
-    notes.forEach(note => {
-      // 跳过没有互动数据的笔记
-      if (note.likes === 0 && !note.needsDetailFetch) return;
-      
-      // 如果需要获取详情数据，暂时跳过或标记
-      if (note.needsDetailFetch) {
-        // 可以标记为"待分析"
-        return;
-      }
-      
-      // 计算比率（如果粉丝数为 0，设为 1 避免除零）
-      const fans = note.authorFans || 1;
-      const likeToFansRatio = note.likes / fans;
-      const collectToFansRatio = note.collects / fans;
-      
-      // 计算综合得分
-      let score = 0;
-      let isSuperBomb = false;
-      let isPotentialBomb = false;
-      
-      // 超爆款判定
-      if (likeToFansRatio >= likeRatio && 
-          collectToFansRatio >= collectRatio && 
-          note.likes >= minLikes) {
-        isSuperBomb = true;
-        score = likeToFansRatio * 0.6 + collectToFansRatio * 0.4;
-      }
-      // 潜力爆款判定
-      else if ((likeToFansRatio >= likeRatio * 0.7 || 
-                collectToFansRatio >= collectRatio * 0.7) && 
-               note.likes >= minLikes * 0.5) {
-        isPotentialBomb = true;
-        score = likeToFansRatio * 0.5 + collectToFansRatio * 0.3;
-      }
-      
-      if (isSuperBomb || isPotentialBomb) {
-        bombs.push({
-          ...note,
-          isSuperBomb,
-          isPotentialBomb,
-          score,
-          likeToFansRatio,
-          collectToFansRatio
-        });
-      }
-    });
-    
-    // 按得分排序
-    bombs.sort((a, b) => b.score - a.score);
-    
-    return bombs;
-  }
-
-  // 高亮标注爆款文章
-  function highlightBombs(bombs) {
-    // 先清除之前的标注
+  // 在搜索页标注所有笔记
+  function highlightNotesForAnalysis(notes) {
+    // 清除之前的标注
     clearHighlights();
     
-    bombs.forEach(bomb => {
-      const element = bomb.element;
+    notes.forEach((note, index) => {
+      const element = note.element;
       if (!element) return;
       
-      // 添加对应的样式类
-      if (bomb.isSuperBomb) {
-        element.classList.add('xhs-bomb-super');
-      } else if (bomb.isPotentialBomb) {
-        element.classList.add('xhs-bomb-potential');
-      }
+      // 添加待分析样式
+      element.classList.add('xhs-bomb-pending');
       
-      // 添加数据标签
+      // 添加序号标签
       const badge = document.createElement('div');
-      badge.className = 'xhs-bomb-badge';
-      badge.textContent = `👍 ${formatNumber(bomb.likes)} | ⭐ ${formatNumber(bomb.collects)}`;
+      badge.className = 'xhs-bomb-badge xhs-bomb-badge-pending';
+      badge.textContent = `📝 ${index + 1}`;
+      badge.title = '点击查看详情获取完整数据';
       element.style.position = 'relative';
       element.appendChild(badge);
     });
     
-    // 标记需要进一步分析的笔记
-    const needsAnalysis = document.querySelectorAll('.reds-note-card');
-    needsAnalysis.forEach(el => {
-      if (!el.classList.contains('xhs-bomb-super') && 
-          !el.classList.contains('xhs-bomb-potential')) {
-        el.classList.add('xhs-bomb-pending');
-      }
-    });
+    // 显示提示面板
+    showSearchTips(notes.length);
   }
 
-  // 清除之前的标注
+  // 分析当前详情页笔记
+  async function analyzeCurrentNote(settings) {
+    showLoading(true);
+    
+    try {
+      // 等待详情页加载
+      await waitForElement('[class*="note-content"], [class*="detail"]', 5000);
+      
+      // 提取当前笔记的完整数据
+      const noteData = extractDetailNoteData();
+      
+      if (!noteData) {
+        showLoading(false);
+        return {
+          success: false,
+          message: '无法获取笔记数据'
+        };
+      }
+      
+      // 分析是否为爆款
+      const analysis = analyzeBomb(noteData, settings);
+      analysisResult = analysis;
+      
+      // 标注当前笔记
+      highlightDetailNote(analysis);
+      
+      showLoading(false);
+      
+      return {
+        success: true,
+        noteData: noteData,
+        analysis: analysis,
+        message: analysis.isSuperBomb ? '🔥 这是一篇超爆款笔记！' : 
+                 analysis.isPotentialBomb ? '⭐ 这是一篇潜力爆款笔记！' : 
+                 '📄 普通笔记'
+      };
+    } catch (error) {
+      console.error('详情页分析失败:', error);
+      showLoading(false);
+      return {
+        success: false,
+        message: '分析失败：' + error.message
+      };
+    }
+  }
+
+  // 从详情页提取笔记数据
+  function extractDetailNoteData() {
+    const data = {
+      id: getCurrentNoteId(),
+      title: '',
+      author: '',
+      authorFans: 0,
+      likes: 0,
+      collects: 0,
+      comments: 0,
+      url: window.location.href
+    };
+    
+    // 提取标题
+    const titleEl = document.querySelector('h1, [class*="title"]');
+    if (titleEl) {
+      data.title = titleEl.textContent.trim();
+    }
+    
+    // 提取作者信息
+    const authorEl = document.querySelector('[class*="author"], [class*="user-info"]');
+    if (authorEl) {
+      data.author = authorEl.textContent.trim();
+    }
+    
+    // 提取粉丝数
+    const fansEl = document.querySelector('[class*="fans"], [class*="follower"]');
+    if (fansEl) {
+      data.authorFans = parseNumber(fansEl.textContent);
+    }
+    
+    // 提取点赞数
+    const likeEl = document.querySelector('[class*="like"] [class*="count"], [class*="interact"]');
+    if (likeEl) {
+      data.likes = parseNumber(likeEl.textContent);
+    }
+    
+    // 提取收藏数
+    const collectEl = document.querySelector('[class*="collect"], [class*="star"], [class*="mark"]');
+    if (collectEl) {
+      data.collects = parseNumber(collectEl.textContent);
+    }
+    
+    // 提取评论数
+    const commentEl = document.querySelector('[class*="comment"] [class*="count"]');
+    if (commentEl) {
+      data.comments = parseNumber(commentEl.textContent);
+    }
+    
+    return data;
+  }
+
+  // 获取当前笔记 ID
+  function getCurrentNoteId() {
+    // 从 URL 提取
+    const match = window.location.href.match(/\/note\/(\w+)/);
+    if (match) {
+      return match[1];
+    }
+    // 或从页面元素提取
+    const noteEl = document.querySelector('[id^="note-"], [data-note-id]');
+    if (noteEl) {
+      return noteEl.id || noteEl.dataset.noteId;
+    }
+    return `detail_${Date.now()}`;
+  }
+
+  // 分析是否为爆款
+  function analyzeBomb(note, settings) {
+    const { likeRatio, collectRatio, minLikes } = settings;
+    
+    // 如果没有粉丝数，无法计算比率
+    if (note.authorFans === 0) {
+      return {
+        ...note,
+        isSuperBomb: false,
+        isPotentialBomb: false,
+        score: 0,
+        likeToFansRatio: 0,
+        collectToFansRatio: 0,
+        message: '无法获取作者粉丝数'
+      };
+    }
+    
+    const likeToFansRatio = note.likes / note.authorFans;
+    const collectToFansRatio = note.collects / note.authorFans;
+    
+    let score = 0;
+    let isSuperBomb = false;
+    let isPotentialBomb = false;
+    
+    // 超爆款判定
+    if (likeToFansRatio >= likeRatio && 
+        collectToFansRatio >= collectRatio && 
+        note.likes >= minLikes) {
+      isSuperBomb = true;
+      score = likeToFansRatio * 0.6 + collectToFansRatio * 0.4;
+    }
+    // 潜力爆款判定
+    else if ((likeToFansRatio >= likeRatio * 0.7 || 
+              collectToFansRatio >= collectRatio * 0.7) && 
+             note.likes >= minLikes * 0.5) {
+      isPotentialBomb = true;
+      score = likeToFansRatio * 0.5 + collectToFansRatio * 0.3;
+    }
+    
+    return {
+      ...note,
+      isSuperBomb,
+      isPotentialBomb,
+      score,
+      likeToFansRatio,
+      collectToFansRatio
+    };
+  }
+
+  // 标注详情页笔记
+  function highlightDetailNote(analysis) {
+    // 找到笔记容器
+    const noteContainer = document.querySelector('article, [class*="note-container"], [class*="detail"]') || document.body;
+    
+    // 清除之前的标注
+    document.querySelectorAll('.xhs-bomb-detail-badge').forEach(el => el.remove());
+    noteContainer.classList.remove('xhs-bomb-super', 'xhs-bomb-potential');
+    
+    // 添加标注
+    const badge = document.createElement('div');
+    badge.className = 'xhs-bomb-detail-badge';
+    
+    if (analysis.isSuperBomb) {
+      noteContainer.classList.add('xhs-bomb-super');
+      badge.innerHTML = `
+        <div style="font-size:24px;margin-bottom:8px;">🔥</div>
+        <div style="font-weight:600;margin-bottom:4px;">超爆款</div>
+        <div style="font-size:12px;">👍 ${formatNumber(analysis.likes)}</div>
+        <div style="font-size:12px;">⭐ ${formatNumber(analysis.collects)}</div>
+        <div style="font-size:11px;color:#ff2442;">点赞/粉丝比：${analysis.likeToFansRatio.toFixed(1)}</div>
+      `;
+    } else if (analysis.isPotentialBomb) {
+      noteContainer.classList.add('xhs-bomb-potential');
+      badge.innerHTML = `
+        <div style="font-size:24px;margin-bottom:8px;">⭐</div>
+        <div style="font-weight:600;margin-bottom:4px;">潜力爆款</div>
+        <div style="font-size:12px;">👍 ${formatNumber(analysis.likes)}</div>
+        <div style="font-size:12px;">⭐ ${formatNumber(analysis.collects)}</div>
+      `;
+    } else {
+      badge.innerHTML = `
+        <div style="font-size:20px;margin-bottom:8px;">📄</div>
+        <div style="font-weight:600;">普通笔记</div>
+        <div style="font-size:11px;color:#999;">点赞/粉丝比：${analysis.likeToFansRatio.toFixed(2)}</div>
+      `;
+    }
+    
+    badge.style.cssText = 'position:fixed;top:80px;right:20px;background:white;padding:16px;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,0.15);z-index:9999;width:160px;text-align:center;font-family:-apple-system,BlinkMacSystemFont,sans-serif;';
+    document.body.appendChild(badge);
+  }
+
+  // 显示搜索页提示
+  function showSearchTips(totalNotes) {
+    // 移除旧的提示
+    document.querySelectorAll('.xhs-bomb-search-tip').forEach(el => el.remove());
+    
+    const tip = document.createElement('div');
+    tip.className = 'xhs-bomb-search-tip';
+    tip.innerHTML = `
+      <div style="font-weight:600;margin-bottom:8px;">📋 已标注 ${totalNotes} 篇笔记</div>
+      <div style="font-size:12px;color:#666;margin-bottom:12px;">
+        灰色虚线框 = 待分析<br>
+        请点击笔记进入详情页获取完整数据
+      </div>
+      <div style="font-size:11px;color:#999;">
+        💡 提示：在详情页点击插件图标可分析当前笔记
+      </div>
+    `;
+    tip.style.cssText = 'position:fixed;top:80px;right:20px;background:white;padding:16px;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,0.15);z-index:9999;width:240px;font-family:-apple-system,BlinkMacSystemFont,sans-serif;';
+    document.body.appendChild(tip);
+  }
+
+  // 清除标注
   function clearHighlights() {
-    document.querySelectorAll('.xhs-bomb-super, .xhs-bomb-potential, .xhs-bomb-badge').forEach(el => {
+    document.querySelectorAll('.xhs-bomb-super, .xhs-bomb-potential, .xhs-bomb-pending, .xhs-bomb-badge, .xhs-bomb-detail-badge, .xhs-bomb-search-tip').forEach(el => {
       el.classList.remove('xhs-bomb-super', 'xhs-bomb-potential', 'xhs-bomb-pending');
-      if (el.classList.contains('xhs-bomb-badge')) {
+      if (el.classList.contains('xhs-bomb-badge') || 
+          el.classList.contains('xhs-bomb-detail-badge') ||
+          el.classList.contains('xhs-bomb-search-tip')) {
         el.remove();
       }
     });
-  }
-
-  // 显示控制面板
-  function showControlPanel(bombCount, totalCount) {
-    // 移除旧的控制面板
-    if (controlPanel) {
-      controlPanel.remove();
-    }
-    
-    // 创建切换按钮
-    const toggleBtn = document.createElement('button');
-    toggleBtn.className = 'xhs-bomb-toggle';
-    toggleBtn.textContent = '🔥';
-    toggleBtn.title = '爆款统计';
-    toggleBtn.onclick = () => {
-      if (controlPanel) {
-        controlPanel.style.display = controlPanel.style.display === 'none' ? 'block' : 'none';
-      }
-    };
-    document.body.appendChild(toggleBtn);
-    
-    // 创建控制面板
-    controlPanel = document.createElement('div');
-    controlPanel.className = 'xhs-bomb-control-panel';
-    controlPanel.innerHTML = `
-      <h3>爆款统计</h3>
-      <div class="xhs-bomb-stats">
-        <div class="xhs-bomb-stat-item">
-          <span class="xhs-bomb-stat-label">总笔记数</span>
-          <span class="xhs-bomb-stat-value">${totalCount}</span>
-        </div>
-        <div class="xhs-bomb-stat-item">
-          <span class="xhs-bomb-stat-label">🔥 超爆款</span>
-          <span class="xhs-bomb-stat-value">${bombCount}</span>
-        </div>
-        <div class="xhs-bomb-stat-item">
-          <span class="xhs-bomb-stat-label">发现率</span>
-          <span class="xhs-bomb-stat-value">${totalCount > 0 ? ((bombCount / totalCount) * 100).toFixed(1) : 0}%</span>
-        </div>
-      </div>
-      <div class="xhs-bomb-actions">
-        <button class="xhs-bomb-btn xhs-bomb-btn-primary" onclick="window.xhsBombFinder.exportData()">导出数据</button>
-        <button class="xhs-bomb-btn xhs-bomb-btn-secondary" onclick="window.xhsBombFinder.clearHighlights()">清除标注</button>
-      </div>
-      <div style="margin-top:10px;font-size:11px;color:#999;">
-        💡 提示：搜索卡片不显示互动数据，请点击笔记查看详情
-      </div>
-    `;
-    document.body.appendChild(controlPanel);
-    
-    // 导出功能
-    window.xhsBombFinder = {
-      exportData: () => exportBombData(bombArticles),
-      clearHighlights: () => {
-        clearHighlights();
-        if (controlPanel) controlPanel.remove();
-        if (toggleBtn) toggleBtn.remove();
-      }
-    };
-  }
-
-  // 导出爆款数据
-  function exportBombData(bombs) {
-    const csvContent = [
-      ['标题', '作者', '粉丝数', '点赞数', '收藏数', '评论数', '点赞/粉丝比', '收藏/粉丝比', '类型', 'URL'],
-      ...bombs.map(bomb => [
-        bomb.title,
-        bomb.author,
-        bomb.authorFans,
-        bomb.likes,
-        bomb.collects,
-        bomb.comments,
-        bomb.likeToFansRatio.toFixed(2),
-        bomb.collectToFansRatio.toFixed(2),
-        bomb.isSuperBomb ? '超爆款' : '潜力爆款',
-        bomb.url
-      ])
-    ].map(row => row.map(cell => `"${cell || ''}"`).join(',')).join('\n');
-    
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `小红书爆款_${new Date().toISOString().slice(0, 10)}.csv`;
-    link.click();
   }
 
   // 显示/隐藏加载动画
@@ -377,7 +417,7 @@
       loadingEl.className = 'xhs-bomb-loading';
       loadingEl.innerHTML = `
         <div class="xhs-bomb-loading-spinner"></div>
-        <div class="xhs-bomb-loading-text">正在分析爆款文章...</div>
+        <div class="xhs-bomb-loading-text">正在分析...</div>
       `;
       document.body.appendChild(loadingEl);
     } else if (!show && loadingEl) {
@@ -430,31 +470,24 @@
     return num.toString();
   }
 
-  // 解析数字（处理 1.2 万、12.3k 等格式）
+  // 解析数字
   function parseNumber(text) {
     if (!text) return 0;
-    
-    // 移除表情符号和非数字字符
     const cleaned = text.replace(/[👍⭐💬❤️]/g, '').trim();
     
-    // 处理中文单位
     if (cleaned.includes('万')) {
       const num = parseFloat(cleaned.replace('万', ''));
       return Math.round(num * 10000);
     }
-    
     if (cleaned.includes('千')) {
       const num = parseFloat(cleaned.replace('千', ''));
       return Math.round(num * 1000);
     }
-    
-    // 处理英文单位
     if (cleaned.toLowerCase().includes('k')) {
       const num = parseFloat(cleaned.toLowerCase().replace('k', ''));
       return Math.round(num * 1000);
     }
     
-    // 纯数字
     const num = parseFloat(cleaned);
     return isNaN(num) ? 0 : Math.round(num);
   }

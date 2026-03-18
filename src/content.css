@@ -2,9 +2,15 @@
 
 /* 待分析 - 灰色边框 */
 .xhs-bomb-pending {
-  border: 1px dashed #ccc !important;
+  border: 2px dashed #999 !important;
   border-radius: 8px !important;
   transition: all 0.3s ease !important;
+  opacity: 0.9;
+}
+
+.xhs-bomb-pending:hover {
+  border-color: #ff2442 !important;
+  opacity: 1;
 }
 
 /* 超爆款 - 红色边框高亮 */

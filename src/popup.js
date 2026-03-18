@@ -28,15 +28,8 @@ document.addEventListener('DOMContentLoaded', () => {
     input.addEventListener('change', saveSettings);
   });
 
-  // 搜索按钮点击
+  // 搜索/分析按钮点击
   searchBtn.addEventListener('click', async () => {
-    const keyword = keywordInput.value.trim();
-    
-    if (!keyword) {
-      showStatus('请输入搜索关键词', 'error');
-      return;
-    }
-
     // 获取当前活动标签页
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     
@@ -54,24 +47,62 @@ document.addEventListener('DOMContentLoaded', () => {
     // 保存设置
     saveSettings();
 
-    // 发送消息到 content script
+    // 判断是搜索页还是详情页
+    const isSearchPage = tab.url.includes('/search');
+    const keyword = keywordInput.value.trim();
+
     try {
-      showStatus('正在搜索...', 'info');
+      showStatus('正在分析...', 'info');
       
-      const response = await chrome.tabs.sendMessage(tab.id, {
-        action: 'search',
-        keyword: keyword,
-        settings: {
-          likeRatio: parseInt(likeRatioInput.value) || 10,
-          collectRatio: parseInt(collectRatioInput.value) || 5,
-          minLikes: parseInt(minLikesInput.value) || 100
+      let message = {};
+      
+      if (isSearchPage) {
+        // 搜索页
+        if (!keyword) {
+          message = {
+            action: 'search',
+            settings: {
+              likeRatio: parseInt(likeRatioInput.value) || 10,
+              collectRatio: parseInt(collectRatioInput.value) || 5,
+              minLikes: parseInt(minLikesInput.value) || 100
+            }
+          };
+        } else {
+          showStatus('请在小红书搜索框输入关键词', 'info');
+          // 仍然执行标注
+          message = {
+            action: 'search',
+            settings: {
+              likeRatio: parseInt(likeRatioInput.value) || 10,
+              collectRatio: parseInt(collectRatioInput.value) || 5,
+              minLikes: parseInt(minLikesInput.value) || 100
+            }
+          };
         }
-      });
+      } else {
+        // 详情页 - 分析当前笔记
+        message = {
+          action: 'analyze',
+          settings: {
+            likeRatio: parseInt(likeRatioInput.value) || 10,
+            collectRatio: parseInt(collectRatioInput.value) || 5,
+            minLikes: parseInt(minLikesInput.value) || 100
+          }
+        };
+      }
+      
+      const response = await chrome.tabs.sendMessage(tab.id, message);
 
       if (response && response.success) {
-        showStatus(`找到 ${response.bombCount} 篇爆款文章！`, 'success');
+        if (response.message) {
+          showStatus(response.message, 'success');
+        } else if (response.bombCount !== undefined) {
+          showStatus(`找到 ${response.bombCount} 篇爆款！`, 'success');
+        } else {
+          showStatus('分析完成', 'success');
+        }
       } else {
-        showStatus(response?.message || '搜索完成', 'info');
+        showStatus(response?.message || '分析完成', 'info');
       }
     } catch (error) {
       console.error('Error:', error);
