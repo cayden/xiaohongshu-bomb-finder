@@ -1,0 +1,18 @@
+{
+  "name": "xiaohongshu-bomb-finder",
+  "version": "1.0.0",
+  "description": "小红书爆款文章查找工具 - 发现低粉高赞的优质内容",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "xiaohongshu",
+    "chrome-extension",
+    "bomb",
+    "viral"
+  ],
+  "author": "",
+  "license": "MIT",
+  "type": "commonjs"
+}

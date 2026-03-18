@@ -1,0 +1,209 @@
+/* 小红书爆款标注样式 */
+
+/* 超爆款 - 红色边框高亮 */
+.xhs-bomb-super {
+  border: 3px solid #ff2442 !important;
+  border-radius: 8px !important;
+  position: relative !important;
+  transition: all 0.3s ease !important;
+  box-shadow: 0 4px 12px rgba(255, 36, 66, 0.4) !important;
+}
+
+.xhs-bomb-super::before {
+  content: '🔥 超爆款' !important;
+  position: absolute !important;
+  top: -12px !important;
+  left: 12px !important;
+  background: #ff2442 !important;
+  color: white !important;
+  padding: 2px 8px !important;
+  border-radius: 4px !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  z-index: 1000 !important;
+}
+
+/* 潜力爆款 - 橙色边框 */
+.xhs-bomb-potential {
+  border: 2px solid #ff9500 !important;
+  border-radius: 8px !important;
+  position: relative !important;
+  transition: all 0.3s ease !important;
+  box-shadow: 0 2px 8px rgba(255, 149, 0, 0.3) !important;
+}
+
+.xhs-bomb-potential::before {
+  content: '⭐ 潜力爆款' !important;
+  position: absolute !important;
+  top: -10px !important;
+  left: 12px !important;
+  background: #ff9500 !important;
+  color: white !important;
+  padding: 2px 8px !important;
+  border-radius: 4px !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  z-index: 1000 !important;
+}
+
+/* 爆款数据标签 */
+.xhs-bomb-badge {
+  position: absolute !important;
+  top: 8px !important;
+  right: 8px !important;
+  background: linear-gradient(135deg, #ff2442, #ff6b7a) !important;
+  color: white !important;
+  padding: 4px 8px !important;
+  border-radius: 6px !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  z-index: 1001 !important;
+  box-shadow: 0 2px 6px rgba(255, 36, 66, 0.4) !important;
+}
+
+/* 控制面板 */
+.xhs-bomb-control-panel {
+  position: fixed !important;
+  top: 80px !important;
+  right: 20px !important;
+  background: white !important;
+  border-radius: 12px !important;
+  padding: 16px !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15) !important;
+  z-index: 9999 !important;
+  width: 280px !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+}
+
+.xhs-bomb-control-panel h3 {
+  font-size: 14px !important;
+  font-weight: 600 !important;
+  color: #333 !important;
+  margin-bottom: 12px !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+}
+
+.xhs-bomb-control-panel h3::before {
+  content: '🔥' !important;
+}
+
+.xhs-bomb-stats {
+  background: #f5f5f5 !important;
+  border-radius: 8px !important;
+  padding: 12px !important;
+  margin-bottom: 12px !important;
+}
+
+.xhs-bomb-stat-item {
+  display: flex !important;
+  justify-content: space-between !important;
+  margin-bottom: 6px !important;
+  font-size: 13px !important;
+}
+
+.xhs-bomb-stat-item:last-child {
+  margin-bottom: 0 !important;
+}
+
+.xhs-bomb-stat-label {
+  color: #666 !important;
+}
+
+.xhs-bomb-stat-value {
+  font-weight: 600 !important;
+  color: #ff2442 !important;
+}
+
+.xhs-bomb-actions {
+  display: flex !important;
+  gap: 8px !important;
+}
+
+.xhs-bomb-btn {
+  flex: 1 !important;
+  padding: 8px 12px !important;
+  border: none !important;
+  border-radius: 6px !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  cursor: pointer !important;
+  transition: all 0.2s !important;
+}
+
+.xhs-bomb-btn-primary {
+  background: #ff2442 !important;
+  color: white !important;
+}
+
+.xhs-bomb-btn-primary:hover {
+  background: #e61e3a !important;
+}
+
+.xhs-bomb-btn-secondary {
+  background: #f0f0f0 !important;
+  color: #666 !important;
+}
+
+.xhs-bomb-btn-secondary:hover {
+  background: #e0e0e0 !important;
+}
+
+/* 加载动画 */
+.xhs-bomb-loading {
+  position: fixed !important;
+  top: 50% !important;
+  left: 50% !important;
+  transform: translate(-50%, -50%) !important;
+  background: white !important;
+  border-radius: 12px !important;
+  padding: 24px 32px !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2) !important;
+  z-index: 10000 !important;
+  text-align: center !important;
+}
+
+.xhs-bomb-loading-spinner {
+  width: 40px !important;
+  height: 40px !important;
+  border: 4px solid #f3f3f3 !important;
+  border-top: 4px solid #ff2442 !important;
+  border-radius: 50% !important;
+  animation: xhs-bomb-spin 1s linear infinite !important;
+  margin: 0 auto 12px !important;
+}
+
+@keyframes xhs-bomb-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.xhs-bomb-loading-text {
+  font-size: 14px !important;
+  color: #333 !important;
+  font-weight: 500 !important;
+}
+
+/* 隐藏控制板按钮 */
+.xhs-bomb-toggle {
+  position: fixed !important;
+  top: 80px !important;
+  right: 20px !important;
+  background: white !important;
+  border: 2px solid #ff2442 !important;
+  border-radius: 50% !important;
+  width: 44px !important;
+  height: 44px !important;
+  font-size: 20px !important;
+  cursor: pointer !important;
+  z-index: 9998 !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+.xhs-bomb-toggle:hover {
+  background: #ff2442 !important;
+}

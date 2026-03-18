@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>Icon Generator</title>
+</head>
+<body>
+  <canvas id="canvas16" width="16" height="16"></canvas>
+  <canvas id="canvas48" width="48" height="48"></canvas>
+  <canvas id="canvas128" width="128" height="128"></canvas>
+  
+  <script>
+    function createIcon(canvasId, size) {
+      const canvas = document.getElementById(canvasId);
+      const ctx = canvas.getContext('2d');
+      
+      // 清空
+      ctx.clearRect(0, 0, size, size);
+      
+      // 红色圆形背景
+      const margin = size / 8;
+      const radius = (size - 2 * margin) / 2;
+      const centerX = size / 2;
+      const centerY = size / 2;
+      
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+      ctx.fillStyle = '#ff2442';
+      ctx.fill();
+      
+      // 火焰 emoji
+      ctx.font = `${size * 0.6}px Arial, Apple Color Emoji, Segoe UI Emoji`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('🔥', centerX, centerY + size * 0.05);
+      
+      // 下载
+      const dataUrl = canvas.toDataURL('image/png');
+      
+      // 创建下载链接
+      const link = document.createElement('a');
+      link.download = `icon${size}.png`;
+      link.href = dataUrl;
+      link.click();
+      
+      console.log(`Generated icon${size}.png`);
+    }
+    
+    // 生成所有尺寸
+    setTimeout(() => {
+      createIcon('canvas16', 16);
+      createIcon('canvas48', 48);
+      createIcon('canvas128', 128);
+      console.log('All icons generated!');
+    }, 100);
+  </script>
+</body>
+</html>
