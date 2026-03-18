@@ -1,5 +1,12 @@
 /* 小红书爆款标注样式 */
 
+/* 待分析 - 灰色边框 */
+.xhs-bomb-pending {
+  border: 1px dashed #ccc !important;
+  border-radius: 8px !important;
+  transition: all 0.3s ease !important;
+}
+
 /* 超爆款 - 红色边框高亮 */
 .xhs-bomb-super {
   border: 3px solid #ff2442 !important;
