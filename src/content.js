@@ -194,6 +194,10 @@
       const analysis = analyzeBomb(noteData, settings);
       analysisResult = analysis;
       
+      // 输出调试信息
+      console.log('🔍 笔记数据:', noteData);
+      console.log('📊 分析结果:', analysis);
+      
       // 标注当前笔记
       highlightDetailNote(analysis);
       
@@ -231,39 +235,70 @@
     };
     
     // 提取标题
-    const titleEl = document.querySelector('h1, [class*="title"]');
+    const titleEl = document.querySelector('h1, [class*="title"], [class*="Title"]');
     if (titleEl) {
       data.title = titleEl.textContent.trim();
     }
     
-    // 提取作者信息
-    const authorEl = document.querySelector('[class*="author"], [class*="user-info"]');
-    if (authorEl) {
-      data.author = authorEl.textContent.trim();
+    // 提取作者信息和粉丝数（小红书把粉丝数放在作者名后面）
+    const authorEls = document.querySelectorAll('[class*="author"], [class*="user-info"], [class*="nickname"]');
+    for (const authorEl of authorEls) {
+      const text = authorEl.textContent.trim();
+      data.author = text;
+      // 尝试从作者文本中提取粉丝数（如 "DJ 伦 10 万+"）
+      const fansMatch = text.match(/(\d+(?:\.\d+)?[万千kK万+]+)/);
+      if (fansMatch) {
+        data.authorFans = parseNumber(fansMatch[0]);
+      }
+      if (data.authorFans > 0) break;
     }
     
-    // 提取粉丝数
-    const fansEl = document.querySelector('[class*="fans"], [class*="follower"]');
-    if (fansEl) {
-      data.authorFans = parseNumber(fansEl.textContent);
+    // 提取点赞数 - 多种选择器尝试
+    const likeSelectors = [
+      '[class*="like"] [class*="count"]',
+      '[class*="like"] .count',
+      '[class*="interact"] .count',
+      'button[class*="like"] .count',
+      '[class*="like-count"]'
+    ];
+    for (const selector of likeSelectors) {
+      const likeEl = document.querySelector(selector);
+      if (likeEl && likeEl.textContent.trim()) {
+        data.likes = parseNumber(likeEl.textContent);
+        break;
+      }
     }
     
-    // 提取点赞数
-    const likeEl = document.querySelector('[class*="like"] [class*="count"], [class*="interact"]');
-    if (likeEl) {
-      data.likes = parseNumber(likeEl.textContent);
-    }
-    
-    // 提取收藏数
-    const collectEl = document.querySelector('[class*="collect"], [class*="star"], [class*="mark"]');
-    if (collectEl) {
-      data.collects = parseNumber(collectEl.textContent);
+    // 提取收藏数 - 多种选择器尝试
+    const collectSelectors = [
+      '[class*="collect"] [class*="count"]',
+      '[class*="collect"] .count',
+      '[class*="star"] [class*="count"]',
+      '[class*="star"] .count',
+      '[class*="mark"] [class*="count"]',
+      'button[class*="collect"] .count',
+      '[class*="collect-count"]'
+    ];
+    for (const selector of collectSelectors) {
+      const collectEl = document.querySelector(selector);
+      if (collectEl && collectEl.textContent.trim()) {
+        data.collects = parseNumber(collectEl.textContent);
+        break;
+      }
     }
     
     // 提取评论数
-    const commentEl = document.querySelector('[class*="comment"] [class*="count"]');
-    if (commentEl) {
-      data.comments = parseNumber(commentEl.textContent);
+    const commentSelectors = [
+      '[class*="comment"] [class*="count"]',
+      '[class*="comment"] .count',
+      'button[class*="comment"] .count'
+    ];
+    for (const selector of commentSelectors) {
+      const commentEl = document.querySelector(selector);
+      if (commentEl && commentEl.textContent.trim()) {
+        data.comments = parseNumber(commentEl.textContent);
+        break;
+      }
     }
     
     return data;
